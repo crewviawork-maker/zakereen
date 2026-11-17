@@ -10,33 +10,121 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as MeRouteImport } from './routes/me'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminLocationsRouteImport } from './routes/admin.locations'
+import { Route as AdminMembersRouteImport } from './routes/admin.members'
+import { Route as AdminGroupsIndexRouteImport } from './routes/admin.groups.index'
+import { Route as AdminGroupsGroupIdRouteImport } from './routes/admin.groups.$groupId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MeRoute = MeRouteImport.update({
+  id: '/me',
+  path: '/me',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLocationsRoute = AdminLocationsRouteImport.update({
+  id: '/locations',
+  path: '/locations',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminMembersRoute = AdminMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminGroupsIndexRoute = AdminGroupsIndexRouteImport.update({
+  id: '/groups/',
+  path: '/groups/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminGroupsGroupIdRoute = AdminGroupsGroupIdRouteImport.update({
+  id: '/groups/$groupId',
+  path: '/groups/$groupId',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/me': typeof MeRoute
+  '/admin/locations': typeof AdminLocationsRoute
+  '/admin/members': typeof AdminMembersRoute
+  '/admin/': typeof AdminIndexRoute
+  '/admin/groups/$groupId': typeof AdminGroupsGroupIdRoute
+  '/admin/groups/': typeof AdminGroupsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/me': typeof MeRoute
+  '/admin/locations': typeof AdminLocationsRoute
+  '/admin/members': typeof AdminMembersRoute
+  '/admin': typeof AdminIndexRoute
+  '/admin/groups/$groupId': typeof AdminGroupsGroupIdRoute
+  '/admin/groups': typeof AdminGroupsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/me': typeof MeRoute
+  '/admin/locations': typeof AdminLocationsRoute
+  '/admin/members': typeof AdminMembersRoute
+  '/admin/': typeof AdminIndexRoute
+  '/admin/groups/$groupId': typeof AdminGroupsGroupIdRoute
+  '/admin/groups/': typeof AdminGroupsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/me'
+    | '/admin/locations'
+    | '/admin/members'
+    | '/admin/'
+    | '/admin/groups/$groupId'
+    | '/admin/groups/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/me'
+    | '/admin/locations'
+    | '/admin/members'
+    | '/admin'
+    | '/admin/groups/$groupId'
+    | '/admin/groups'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/me'
+    | '/admin/locations'
+    | '/admin/members'
+    | '/admin/'
+    | '/admin/groups/$groupId'
+    | '/admin/groups/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRouteWithChildren
+  MeRoute: typeof MeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +136,80 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/me': {
+      id: '/me'
+      path: '/me'
+      fullPath: '/me'
+      preLoaderRoute: typeof MeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/locations': {
+      id: '/admin/locations'
+      path: '/locations'
+      fullPath: '/admin/locations'
+      preLoaderRoute: typeof AdminLocationsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/members': {
+      id: '/admin/members'
+      path: '/members'
+      fullPath: '/admin/members'
+      preLoaderRoute: typeof AdminMembersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/groups/': {
+      id: '/admin/groups/'
+      path: '/groups'
+      fullPath: '/admin/groups/'
+      preLoaderRoute: typeof AdminGroupsIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/groups/$groupId': {
+      id: '/admin/groups/$groupId'
+      path: '/groups/$groupId'
+      fullPath: '/admin/groups/$groupId'
+      preLoaderRoute: typeof AdminGroupsGroupIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
+interface AdminRouteChildren {
+  AdminLocationsRoute: typeof AdminLocationsRoute
+  AdminMembersRoute: typeof AdminMembersRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+  AdminGroupsGroupIdRoute: typeof AdminGroupsGroupIdRoute
+  AdminGroupsIndexRoute: typeof AdminGroupsIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminLocationsRoute: AdminLocationsRoute,
+  AdminMembersRoute: AdminMembersRoute,
+  AdminIndexRoute: AdminIndexRoute,
+  AdminGroupsGroupIdRoute: AdminGroupsGroupIdRoute,
+  AdminGroupsIndexRoute: AdminGroupsIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRouteWithChildren,
+  MeRoute: MeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -28,3 +28,9 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+- Sign-in is a server-side encrypted session cookie (src/lib/session.server.ts), not Supabase Auth: the owner asked for ITS-ID-only login with a hardcoded admin ID.
+- Roster tables have RLS on with no policies and only service_role grants; every read/write goes through server functions in src/lib/roster.functions.ts that check the session first — never query these tables from the browser.
+- Pairing rules (time clashes, mixed-mohalla detection, auto-pair ranking) live only in src/lib/roster.ts as pure functions with tests in src/lib/roster.test.ts; UI and server both call them so behaviour stays identical.
+- The database also enforces one location per group per timing (unique index) as a backstop to the server check.
