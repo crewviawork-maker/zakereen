@@ -1,11 +1,13 @@
 // Pure roster rules shared by the browser and the server. No I/O here.
 
 export type Group = { id: string; name: string };
+export type MemberRole = "tipper" | "chorus";
 export type Member = {
   id: string;
   name: string;
   its_id: string;
   phone: string;
+  role: MemberRole;
   group_id: string | null;
 };
 export type Location = {
@@ -165,4 +167,79 @@ export function initials(name: string): string {
 const TONES = ["tone-tangerine", "tone-lime", "tone-blush", "tone-mint", "tone-ink"] as const;
 export function toneFor(index: number): (typeof TONES)[number] {
   return TONES[index % TONES.length] ?? "tone-tangerine";
+}
+
+/* ---------------- Tipper / Chorus ---------------- */
+
+export function isTipper(m: { role: string }): boolean {
+  return m.role === "tipper";
+}
+
+/** The tipper of a group (a group has at most one), ignoring one member id. */
+export function tipperOf(
+  groupId: string,
+  members: Member[],
+  excludeMemberId?: string,
+): Member | undefined {
+  return members.find((m) => m.group_id === groupId && isTipper(m) && m.id !== excludeMemberId);
+}
+
+/** Tipper first, then chorus, each alphabetically. */
+export function sortMembers(list: Member[]): Member[] {
+  return [...list].sort(
+    (a, b) => Number(isTipper(b)) - Number(isTipper(a)) || a.name.localeCompare(b.name),
+  );
+}
+
+/** Members that can be picked for a group: free ones, or already in this group. */
+export function pickableFor(groupId: string | undefined, members: Member[], role: MemberRole) {
+  return members.filter(
+    (m) => m.role === role && (m.group_id === null || (groupId !== undefined && m.group_id === groupId)),
+  );
+}
+
+/* ---------------- Spreadsheet parsing ---------------- */
+
+/**
+ * Turn a spreadsheet timing into "HH:MM". Accepts Excel time numbers (fraction of a day),
+ * "19:30", "19:30:00", "7:30 PM", "7.30pm", "7 PM". Returns null when it can't be read.
+ */
+export function parseTiming(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const fraction = value % 1 === 0 && value > 1 ? null : value % 1;
+    if (fraction === null) return null;
+    const total = Math.round(fraction * 24 * 60) % (24 * 60);
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
+  }
+  const text = String(value).trim().toLowerCase().replace(/\s+/g, "");
+  const match = /^(\d{1,2})(?:[:.](\d{2}))?(?::\d{2})?(am|pm)?$/.exec(text);
+  if (!match) return null;
+  let h = Number(match[1]);
+  const m = Number(match[2] ?? "0");
+  const suffix = match[3];
+  if (m > 59) return null;
+  if (suffix) {
+    if (h < 1 || h > 12) return null;
+    if (suffix === "pm" && h !== 12) h += 12;
+    if (suffix === "am" && h === 12) h = 0;
+  } else if (h > 23 || match[2] === undefined) {
+    return null;
+  }
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/** Spreadsheet cell -> trimmed text (numbers keep all digits). */
+export function cellText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : String(value);
+  return String(value).trim();
+}
+
+/** Read "Tipper"/"Chorus" (any case); anything else counts as chorus. */
+export function parseRole(value: unknown): MemberRole {
+  return cellText(value).toLowerCase().startsWith("t") ? "tipper" : "chorus";
 }

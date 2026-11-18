@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AlertTriangle, ArrowUpRight, MapPin, Users } from "lucide-react";
 import { EmptyNote } from "@/components/roster/group-view";
 import { adminDataQuery } from "@/lib/queries";
-import { isMixedMohalla, locationsOfGroup, mohallasOfGroup, toneFor } from "@/lib/roster";
+import { isMixedMohalla, locationsOfGroup, mohallasOfGroup, tipperOf, toneFor } from "@/lib/roster";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/")({
@@ -31,6 +31,7 @@ function Dashboard() {
     mohallas: mohallasOfGroup(g.id, locations),
     memberCount: members.filter((m) => m.group_id === g.id).length,
     mixed: isMixedMohalla(g.id, locations),
+    tipper: tipperOf(g.id, members)?.name,
   }));
   const paired = cards.filter((c) => c.count > 0).sort((a, b) => Number(b.mixed) - Number(a.mixed));
   const idle = cards.filter((c) => c.count === 0);
@@ -92,6 +93,9 @@ function Dashboard() {
                     <ArrowUpRight className="size-4" />
                   </span>
                 </div>
+                {c.tipper ? (
+                  <p className="relative mt-0.5 truncate text-sm font-medium opacity-80">Tipper · {c.tipper}</p>
+                ) : null}
                 {c.mixed ? (
                   <p className="relative mt-1 inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wide">
                     <AlertTriangle className="size-3.5" /> Mixed mohalla

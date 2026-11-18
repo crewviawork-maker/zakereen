@@ -8,6 +8,13 @@
       "when": 1794945165788,
       "tag": "0000_create_roster_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794979288683,
+      "tag": "0001_member_tipper_chorus",
+      "breakpoints": true
     }
   ]
 }

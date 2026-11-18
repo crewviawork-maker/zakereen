@@ -77,7 +77,7 @@ function GroupsPage() {
       ) : (
         <EmptyNote>No groups yet. Create your first group.</EmptyNote>
       )}
-      <GroupForm open={open} onOpenChange={setOpen} group={null} groups={data.groups} members={data.members} />
+      <GroupForm open={open} onOpenChange={setOpen} group={null} members={data.members} />
     </div>
   );
 }

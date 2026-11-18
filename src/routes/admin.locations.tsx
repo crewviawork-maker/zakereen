@@ -1,9 +1,10 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { AlertTriangle, MapPin, Plus, Sparkles } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, MapPin, Plus, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { EmptyNote } from "@/components/roster/group-view";
+import { ImportSheet } from "@/components/roster/import-sheet";
 import { LocationForm } from "@/components/roster/location-form";
 import { PageHeader } from "@/components/roster/page-header";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ function LocationsPage() {
   const [filter, setFilter] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Location | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const groupName = useMemo(() => new Map(data.groups.map((g) => [g.id, g.name])), [data.groups]);
 
@@ -69,9 +71,15 @@ function LocationsPage() {
         title="Locations"
         subtitle={`${data.locations.length} location${data.locations.length === 1 ? "" : "s"} · ${sections.length} mohalla${sections.length === 1 ? "" : "s"}`}
         action={
-          <Button onClick={() => openForm(null)}>
-            <Plus /> Add
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="soft" onClick={() => setImporting(true)} aria-label="Import from Excel">
+              <FileSpreadsheet />
+              <span className="hidden sm:inline">Import</span>
+            </Button>
+            <Button onClick={() => openForm(null)}>
+              <Plus /> Add
+            </Button>
+          </div>
         }
       />
 
@@ -159,8 +167,9 @@ function LocationsPage() {
           ))}
         </div>
       ) : (
-        <EmptyNote>No locations yet. Add a mohalla, address and timing.</EmptyNote>
+        <EmptyNote>No locations yet. Add a mohalla, address and timing, or import an Excel file.</EmptyNote>
       )}
+      <ImportSheet kind="locations" open={importing} onOpenChange={setImporting} />
 
       <LocationForm
         open={open}

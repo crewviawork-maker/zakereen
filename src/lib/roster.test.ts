@@ -4,7 +4,11 @@ import {
   findTimeConflict,
   formatTime,
   isMixedMohalla,
+  parseTiming,
+  pickableFor,
   rankGroupsForLocation,
+  tipperOf,
+  type Member,
   type Group,
   type Location,
 } from "./roster";
@@ -69,5 +73,54 @@ describe("roster pairing rules", () => {
   it("formats times for display", () => {
     expect(formatTime("19:30:00")).toBe("7:30 PM");
     expect(formatTime("08:05")).toBe("8:05 AM");
+  });
+});
+
+const mem = (id: string, role: "tipper" | "chorus", group_id: string | null): Member => ({
+  id,
+  name: id,
+  its_id: "1234567" + id.length,
+  phone: "9876543210",
+  role,
+  group_id,
+});
+
+describe("tipper and chorus rules", () => {
+  it("finds the one tipper of a group, ignoring the member being edited", () => {
+    const members = [mem("t1", "tipper", "a"), mem("c1", "chorus", "a")];
+    expect(tipperOf("a", members)?.id).toBe("t1");
+    expect(tipperOf("a", members, "t1")).toBeUndefined();
+  });
+
+  it("only offers tippers who are not in another group", () => {
+    const members = [mem("t1", "tipper", null), mem("t2", "tipper", "b"), mem("t3", "tipper", "a")];
+    expect(pickableFor(undefined, members, "tipper").map((m) => m.id)).toEqual(["t1"]);
+    expect(pickableFor("a", members, "tipper").map((m) => m.id)).toEqual(["t1", "t3"]);
+  });
+
+  it("only offers chorus members who are not in another group", () => {
+    const members = [mem("c1", "chorus", null), mem("c2", "chorus", "b"), mem("t1", "tipper", null)];
+    expect(pickableFor(undefined, members, "chorus").map((m) => m.id)).toEqual(["c1"]);
+  });
+});
+
+describe("spreadsheet timing", () => {
+  it("reads the common ways a time is typed", () => {
+    expect(parseTiming("7:30 PM")).toBe("19:30");
+    expect(parseTiming("7.30pm")).toBe("19:30");
+    expect(parseTiming("8 PM")).toBe("20:00");
+    expect(parseTiming("19:30")).toBe("19:30");
+    expect(parseTiming("20:00:00")).toBe("20:00");
+    expect(parseTiming("12:15 AM")).toBe("00:15");
+  });
+
+  it("reads Excel time cells", () => {
+    expect(parseTiming(0.8125)).toBe("19:30");
+  });
+
+  it("rejects unreadable times", () => {
+    expect(parseTiming("evening")).toBeNull();
+    expect(parseTiming("25:00")).toBeNull();
+    expect(parseTiming("")).toBeNull();
   });
 });

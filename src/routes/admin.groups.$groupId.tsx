@@ -76,7 +76,7 @@ function GroupDetailPage() {
             </Link>{" "}
             page.
           </p>
-          <GroupForm open={edit} onOpenChange={setEdit} group={group} groups={data.groups} members={data.members} />
+          <GroupForm open={edit} onOpenChange={setEdit} group={group} members={data.members} />
           <ConfirmDelete
             open={confirm}
             onOpenChange={setConfirm}

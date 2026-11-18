@@ -6,6 +6,7 @@ import {
   initials,
   mohallasOfGroup,
   sortByTime,
+  sortMembers,
   telHref,
   whatsappHref,
   type Group,
@@ -13,6 +14,7 @@ import {
   type Member,
 } from "@/lib/roster";
 import { cn } from "@/lib/utils";
+import { RoleBadge } from "./role-toggle";
 
 export function MemberCard({ member, isYou }: { member: Member; isYou?: boolean }) {
   return (
@@ -20,15 +22,16 @@ export function MemberCard({ member, isYou }: { member: Member; isYou?: boolean 
       <span
         className={cn(
           "grid size-11 shrink-0 place-items-center rounded-full font-display text-sm font-bold",
-          isYou ? "tone-tangerine" : "tone-blush",
+          member.role === "tipper" ? "tone-tangerine" : isYou ? "tone-lime" : "tone-blush",
         )}
       >
         {initials(member.name)}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold">
-          {member.name}
-          {isYou ? <span className="ml-1.5 text-xs font-medium text-muted-foreground">(you)</span> : null}
+        <p className="flex items-center gap-1.5">
+          <span className="truncate font-semibold">{member.name}</span>
+          {isYou ? <span className="shrink-0 text-xs font-medium text-muted-foreground">(you)</span> : null}
+          <RoleBadge role={member.role} />
         </p>
         <p className="truncate text-sm text-muted-foreground">
           {member.phone} · ITS {member.its_id}
@@ -167,7 +170,7 @@ export function GroupView({
         <SectionTitle count={members.length}>Members</SectionTitle>
         {members.length ? (
           <ul className="space-y-2.5">
-            {members.map((m) => (
+            {sortMembers(members).map((m) => (
               <MemberCard key={m.id} member={m} isYou={m.id === youId} />
             ))}
           </ul>

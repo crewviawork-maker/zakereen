@@ -8,7 +8,17 @@ import {
   requireMember,
   writeSession,
 } from "./session.server";
-import { autoPair, findTimeConflict, formatTime, type Group, type Location, type Member } from "./roster";
+import {
+  autoPair,
+  findTimeConflict,
+  formatTime,
+  mohallaKey,
+  normalizeTime,
+  type Group,
+  type Location,
+  type Member,
+  type MemberRole,
+} from "./roster";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -17,6 +27,8 @@ async function db() {
 
 function friendly(error: { code?: string; message: string }, what: string): never {
   if (error.code === "23505") {
+    if (error.message.includes("one_tipper"))
+      throw new Error("This group already has a tipper. A group can have only one tipper.");
     if (error.message.includes("its_id")) throw new Error("This ITS ID is already added.");
     if (error.message.includes("groups_name")) throw new Error("A group with this name already exists.");
     if (error.message.includes("group_timing"))
@@ -89,13 +101,13 @@ export const getAdminData = createServerFn({ method: "GET" }).handler(
     const sb = await db();
     const [g, m, l] = await Promise.all([
       sb.from("groups").select("id, name").order("name"),
-      sb.from("members").select("id, name, its_id, phone, group_id").order("name"),
+      sb.from("members").select("id, name, its_id, phone, role, group_id").order("name"),
       sb.from("locations").select("id, mohalla, address, timing, group_id").order("timing"),
     ]);
     if (g.error) friendly(g.error, "load groups");
     if (m.error) friendly(m.error, "load members");
     if (l.error) friendly(l.error, "load locations");
-    return { groups: g.data, members: m.data, locations: l.data };
+    return { groups: g.data, members: m.data as Member[], locations: l.data };
   },
 );
 
@@ -109,15 +121,41 @@ const memberInput = z.object({
     .string()
     .trim()
     .regex(/^\+?[\d\s-]{7,20}$/, "Enter a valid contact number"),
+  role: z.enum(["tipper", "chorus"]),
   groupId: idSchema.nullable(),
 });
+
+const phoneSchema = z
+  .string()
+  .trim()
+  .regex(/^\+?[\d\s-]{7,20}$/, "Enter a valid contact number");
+
+async function assertNoOtherTipper(groupId: string | null, memberId?: string) {
+  if (!groupId) return;
+  let q = (await db())
+    .from("members")
+    .select("name")
+    .eq("group_id", groupId)
+    .eq("role", "tipper");
+  if (memberId) q = q.neq("id", memberId);
+  const { data, error } = await q.maybeSingle();
+  if (error) friendly(error, "check the group's tipper");
+  if (data) throw new Error(`This group already has a tipper (${data.name}). A group can have only one tipper.`);
+}
 
 export const saveMember = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => memberInput.parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     if (data.itsId === ADMIN_ITS_ID) throw new Error("That ITS ID is reserved for the admin.");
-    const row = { name: data.name, its_id: data.itsId, phone: data.phone, group_id: data.groupId };
+    if (data.role === "tipper") await assertNoOtherTipper(data.groupId, data.id);
+    const row = {
+      name: data.name,
+      its_id: data.itsId,
+      phone: data.phone,
+      role: data.role,
+      group_id: data.groupId,
+    };
     const sb = await db();
     const { error } = data.id
       ? await sb.from("members").update(row).eq("id", data.id)
@@ -143,6 +181,7 @@ export const saveGroup = createServerFn({ method: "POST" })
       .object({
         id: idSchema.optional(),
         name: z.string().trim().min(1, "Group name is required").max(80),
+        tipperId: idSchema,
         memberIds: z.array(idSchema).max(500),
       })
       .parse(d),
@@ -150,6 +189,22 @@ export const saveGroup = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const sb = await db();
+    const chorusIds = data.memberIds.filter((id) => id !== data.tipperId);
+    const allIds = [data.tipperId, ...chorusIds];
+
+    // Validate picks: one tipper, chorus only, and nobody who is already in another group.
+    const { data: picked, error: pickError } = await sb
+      .from("members")
+      .select("id, name, role, group_id")
+      .in("id", allIds);
+    if (pickError) friendly(pickError, "check members");
+    const tipper = picked.find((m) => m.id === data.tipperId);
+    if (!tipper || tipper.role !== "tipper") throw new Error("Please pick a tipper for this group.");
+    const wrongRole = picked.find((m) => m.id !== data.tipperId && m.role !== "chorus");
+    if (wrongRole) throw new Error(`${wrongRole.name} is a tipper. A group can have only one tipper.`);
+    const taken = picked.find((m) => m.group_id && m.group_id !== data.id);
+    if (taken) throw new Error(`${taken.name} is already in another group.`);
+
     let groupId = data.id;
     if (groupId) {
       const { error } = await sb.from("groups").update({ name: data.name }).eq("id", groupId);
@@ -163,20 +218,18 @@ export const saveGroup = createServerFn({ method: "POST" })
       if (error) friendly(error, "create group");
       groupId = created.id;
     }
-    // Members removed from this group become unassigned; selected members move into it.
-    const clear = sb.from("members").update({ group_id: null }).eq("group_id", groupId);
-    const { error: clearError } =
-      data.memberIds.length > 0
-        ? await clear.not("id", "in", `(${data.memberIds.join(",")})`)
-        : await clear;
+    // Members removed from this group become unassigned; the picks move into it.
+    const { error: clearError } = await sb
+      .from("members")
+      .update({ group_id: null })
+      .eq("group_id", groupId)
+      .not("id", "in", `(${allIds.join(",")})`);
     if (clearError) friendly(clearError, "update group members");
-    if (data.memberIds.length > 0) {
-      const { error } = await sb
-        .from("members")
-        .update({ group_id: groupId })
-        .in("id", data.memberIds);
-      if (error) friendly(error, "update group members");
-    }
+    const { error: setError } = await sb
+      .from("members")
+      .update({ group_id: groupId })
+      .in("id", allIds);
+    if (setError) friendly(setError, "update group members");
     return { id: groupId };
   });
 
@@ -288,6 +341,150 @@ export const runAutoPair = createServerFn({ method: "POST" }).handler(async () =
   return { paired, unpaired: unpaired.length };
 });
 
+/* ---------------- Bulk import ---------------- */
+
+export type ImportReport = { added: number; skipped: { row: number; reason: string }[] };
+
+export const importMembers = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        rows: z
+          .array(
+            z.object({
+              row: z.number().int(),
+              name: z.string().max(200),
+              itsId: z.string().max(40),
+              phone: z.string().max(40),
+              role: z.enum(["tipper", "chorus"]),
+            }),
+          )
+          .max(2000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }): Promise<ImportReport> => {
+    await requireAdmin();
+    const sb = await db();
+    const { data: existing, error } = await sb.from("members").select("its_id");
+    if (error) friendly(error, "check existing members");
+    const seen = new Set(existing.map((m) => m.its_id));
+    const skipped: ImportReport["skipped"] = [];
+    const toInsert: { name: string; its_id: string; phone: string; role: MemberRole }[] = [];
+    for (const r of data.rows) {
+      const name = r.name.trim();
+      const its = r.itsId.trim();
+      if (!name) {
+        skipped.push({ row: r.row, reason: "Name is missing" });
+        continue;
+      }
+      if (!itsSchema.safeParse(its).success) {
+        skipped.push({ row: r.row, reason: `ITS ID "${its}" must be 8 digits` });
+        continue;
+      }
+      if (its === ADMIN_ITS_ID) {
+        skipped.push({ row: r.row, reason: "That ITS ID is reserved for the admin" });
+        continue;
+      }
+      if (seen.has(its)) {
+        skipped.push({ row: r.row, reason: `ITS ID ${its} is already added` });
+        continue;
+      }
+      const phone = phoneSchema.safeParse(r.phone);
+      if (!phone.success) {
+        skipped.push({ row: r.row, reason: `Contact "${r.phone}" is not a valid number` });
+        continue;
+      }
+      seen.add(its);
+      toInsert.push({ name, its_id: its, phone: phone.data, role: r.role });
+    }
+    if (toInsert.length) {
+      const { error: insError } = await sb.from("members").insert(toInsert);
+      if (insError) friendly(insError, "add members");
+    }
+    return { added: toInsert.length, skipped };
+  });
+
+export const importLocations = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        rows: z
+          .array(
+            z.object({
+              row: z.number().int(),
+              mohalla: z.string().max(200),
+              address: z.string().max(400),
+              timing: z.string().nullable(),
+              groupName: z.string().max(200),
+            }),
+          )
+          .max(2000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }): Promise<ImportReport> => {
+    await requireAdmin();
+    const sb = await db();
+    const [g, l] = await Promise.all([
+      sb.from("groups").select("id, name"),
+      sb.from("locations").select("id, mohalla, address, timing, group_id"),
+    ]);
+    if (g.error) friendly(g.error, "load groups");
+    if (l.error) friendly(l.error, "load locations");
+    const groupByName = new Map(g.data.map((x) => [x.name.trim().toLowerCase(), x]));
+    const known: Location[] = [...l.data];
+    const slotKey = (m: string, a: string, t: string) =>
+      `${mohallaKey(m)}|${a.trim().toLowerCase()}|${normalizeTime(t)}`;
+    const slots = new Set(known.map((x) => slotKey(x.mohalla, x.address, x.timing)));
+    const skipped: ImportReport["skipped"] = [];
+    const toInsert: { mohalla: string; address: string; timing: string; group_id: string | null }[] = [];
+
+    for (const r of data.rows) {
+      const mohalla = r.mohalla.trim();
+      const address = r.address.trim();
+      if (!mohalla || !address) {
+        skipped.push({ row: r.row, reason: "Mohalla and address are required" });
+        continue;
+      }
+      if (!r.timing || !/^\d{2}:\d{2}$/.test(r.timing)) {
+        skipped.push({ row: r.row, reason: "Timing is missing or can't be read (use e.g. 7:30 PM)" });
+        continue;
+      }
+      const key = slotKey(mohalla, address, r.timing);
+      if (slots.has(key)) {
+        skipped.push({ row: r.row, reason: "This mohalla, address and time already exist" });
+        continue;
+      }
+      let groupId: string | null = null;
+      const wanted = r.groupName.trim();
+      if (wanted) {
+        const group = groupByName.get(wanted.toLowerCase());
+        if (!group) {
+          skipped.push({ row: r.row, reason: `Group "${wanted}" not found` });
+          continue;
+        }
+        const clash = findTimeConflict(group.id, r.timing, known);
+        if (clash) {
+          skipped.push({
+            row: r.row,
+            reason: `${group.name} is already at ${clash.mohalla} (${clash.address}) at ${formatTime(clash.timing)}`,
+          });
+          continue;
+        }
+        groupId = group.id;
+      }
+      slots.add(key);
+      known.push({ id: `new-${r.row}`, mohalla, address, timing: r.timing, group_id: groupId });
+      toInsert.push({ mohalla, address, timing: r.timing, group_id: groupId });
+    }
+    if (toInsert.length) {
+      const { error } = await sb.from("locations").insert(toInsert);
+      if (error) friendly(error, "add locations");
+    }
+    return { added: toInsert.length, skipped };
+  });
+
 /* ---------------- Member view ---------------- */
 
 export type MyGroupData = {
@@ -303,16 +500,16 @@ export const getMyGroup = createServerFn({ method: "GET" }).handler(
     const sb = await db();
     const { data: me, error } = await sb
       .from("members")
-      .select("id, name, its_id, phone, group_id")
+      .select("id, name, its_id, phone, role, group_id")
       .eq("id", memberId)
       .single();
     if (error) friendly(error, "load your details");
-    if (!me.group_id) return { me, group: null, members: [], locations: [] };
+    if (!me.group_id) return { me: me as Member, group: null, members: [], locations: [] };
     const [g, m, l] = await Promise.all([
       sb.from("groups").select("id, name").eq("id", me.group_id).single(),
       sb
         .from("members")
-        .select("id, name, its_id, phone, group_id")
+        .select("id, name, its_id, phone, role, group_id")
         .eq("group_id", me.group_id)
         .order("name"),
       sb
@@ -324,6 +521,6 @@ export const getMyGroup = createServerFn({ method: "GET" }).handler(
     if (g.error) friendly(g.error, "load your group");
     if (m.error) friendly(m.error, "load your group");
     if (l.error) friendly(l.error, "load your locations");
-    return { me, group: g.data, members: m.data, locations: l.data };
+    return { me: me as Member, group: g.data, members: m.data as Member[], locations: l.data };
   },
 );
